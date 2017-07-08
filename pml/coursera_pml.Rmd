@@ -1,0 +1,117 @@
+---
+title: "coursera_pml"
+author: "peterkratky"
+date: "8 júla 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+```
+
+## Coursera Project
+
+This is a guide of how I predicted the excercise execusion classes based on sensor data.
+
+### Preprocessing data
+
+First, I loaded the training data and excluded rows with `new_window` variable equal to `yes`.
+This is because the test dataset contains only rows with `new_window` equal to `no`.
+
+```{r, include=TRUE}
+data = read.csv("pml-training.csv")
+data = subset(data, new_window == "no")
+print(paste("rows: ", nrow(data), ", cols: ", ncol(data)))
+```
+
+Further, I removed all columns which contained at least one NA.
+
+```{r, warning = FALSE}
+cols = c()
+for (i in 8:(ncol(data)-1)) {
+  if (!is.na(mean(data[,i])))
+    cols = c(cols, i)
+}
+data = data[, c(cols,ncol(data))]
+print(paste("rows: ", nrow(data), ", cols: ", ncol(data)))
+```
+
+Finally, I removed highly correlated attributes.
+
+```{r, warning = FALSE}
+correlationMatrix <- cor(data[,8:(ncol(data)-1)], use = "everything")
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.5)
+data = data[, -highlyCorrelated]
+print(paste("rows: ", nrow(data), ", cols: ", ncol(data)))
+```
+
+```{r, warning = FALSE}
+print(colnames(data))
+```
+
+### Splitting dataset
+
+I splitted the training dataset to training (70%) and testing (30%) part.
+Training is for building the model and tuning parameters.
+Testing is to demonstrate the out of sample performance.
+
+```{r, warning = FALSE}
+train = createDataPartition(y=data$classe, p=0.7, list=FALSE)
+training = data[train,]
+testing = data[-train,]
+
+```
+
+
+### Training the model
+
+I trained a clasifier and using 10-fold cross validation I checked its performance and tuned parameters.
+Also I used Box-Cox transformation because some of the variables look rather skewed.
+
+```{r, message = FALSE, warning=FALSE}
+library(ggplot2)
+library(reshape2)
+dataForPlot <- melt(training[,5:8])
+ggplot(dataForPlot, aes(value)) + 
+  geom_bar() + 
+  facet_wrap(~ variable, scales="free", ncol=4)
+```
+
+As the outcome variable is discrete, I used decision tree for classification. It had poor accuracy.
+I decided to use Random Forrest classifier as it combines multiple decision trees
+
+```{r, message = FALSE, warning=FALSE}
+set.seed(123)
+control <- trainControl(method="repeatedcv", number=10, repeats=1)
+model <- train(classe~., data=training, method="rf", preProcess=c("BoxCox"), trControl=control)
+print(model)
+```
+
+
+### Testing the model
+
+I tested the model on the testing part of the dataset.
+The accuracy is around 0.97 and I can conclude that this is out of sample acuracy.
+
+```{r, message = FALSE, warning=FALSE}
+pr = predict(model, testing)
+m = confusionMatrix(pr, testing$classe)
+print(m)
+```
+
+### Getting predictions for the quiz
+
+I had to apply the preprocessing to testing dataset.
+
+```{r, message = FALSE, warning=FALSE}
+test = read.csv("pml-testing.csv")
+test = test[, c(cols)]
+test = test[, -highlyCorrelated]
+prTest = predict(model, test)
+```
+
+
+
+
+
